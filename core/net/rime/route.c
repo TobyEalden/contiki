@@ -141,6 +141,12 @@ route_add(const linkaddr_t *dest, const linkaddr_t *nexthop,
   }
 
   linkaddr_copy(&e->dest, dest);
+  // TOBY - this weirdness happens when TELOSB is the gateway and CC2538 attempts to add a route.
+  if (0 == linkaddr_cmp(&e->dest, dest)) {
+    printf("***destination address copy failed - forcing manual copy***\n");
+    e->dest.u8[0] = dest->u8[0];
+    e->dest.u8[1] = dest->u8[1];
+  }
   linkaddr_copy(&e->nexthop, nexthop);
   e->cost = cost;
   e->seqno = seqno;
