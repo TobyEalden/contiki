@@ -62,7 +62,7 @@ static struct unicast_conn dataconn;
    network: */
 static struct trickle_conn gateway_announce_conn;
 
-#define DEBUG 0
+#define DEBUG 1
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)

@@ -2,6 +2,10 @@ CONTIKI_PROJECT = echo
 
 all: $(CONTIKI_PROJECT) 
 
+ifdef isslip
+CFLAGS += -DPICO_SLIP=$(isslip)
+endif
+
 CFLAGS += 
 
 CONTIKI_WITH_IPV4 = 1

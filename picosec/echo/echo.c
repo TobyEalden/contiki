@@ -15,9 +15,11 @@
 #include "dev/slip.h"
 #include "net/ipv4/uip-over-mesh.h"
 
-static struct uip_fw_netif slipif = {UIP_FW_NETIF(0,0,0,0, 0,0,0,0, slip_send)};
-static struct uip_fw_netif meshif = {UIP_FW_NETIF(0,0,0,0, 255,255,0,0, uip_over_mesh_send)};
+#ifndef PICO_SLIP
+#define PICO_SLIP 0
+#endif
 
+static struct uip_fw_netif meshif = {UIP_FW_NETIF(0,0,0,0, 255,255,0,0, uip_over_mesh_send)};
 
 /*
  * We define one protosocket since we've decided to only handle one
@@ -32,8 +34,8 @@ static struct psock ps;
  * buffer for this purpose.
  */
 static char buffer[10];
-
 static uint8_t is_gateway;
+static struct etimer eT;
 
 /*---------------------------------------------------------------------------*/
 /*
@@ -94,13 +96,13 @@ PT_THREAD(handle_connection(struct psock *p))
   PSOCK_END(p);
 }
 
+#if PICO_SLIP
+static struct uip_fw_netif slipif = {UIP_FW_NETIF(0,0,0,0, 0,0,0,0, slip_send)};
+
 static void
 set_gateway(void)
 {
-  if(!is_gateway) {
-    // Switch off power saving (I think?)
-    NETSTACK_RDC.off(1);
-    
+  if(!is_gateway) {    
     printf("%d.%d: making myself the IP network gateway.\n\n", linkaddr_node_addr.u8[0], linkaddr_node_addr.u8[1]);
     printf("IPv4 address of the gateway: %d.%d.%d.%d\n\n",  uip_ipaddr_to_quad(&uip_hostaddr));
     uip_over_mesh_set_gateway(&linkaddr_node_addr);
@@ -108,6 +110,7 @@ set_gateway(void)
     is_gateway = 1;
   }
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 /*
@@ -126,17 +129,13 @@ PROCESS_THREAD(example_psock_server_process, ev, data)
    */
   PROCESS_BEGIN();
 
-  slip_arch_init(0);
-
   process_start(&tcpip_process, NULL);
   process_start(&uip_fw_process, NULL);
-  process_start(&slip_process, NULL);
-
-  slip_set_input_callback(set_gateway);
 
   uip_ipaddr_t hostaddr, netmask;
  
   uip_init();
+  uip_fw_init();
 
   uip_ipaddr(&hostaddr, 172,16, linkaddr_node_addr.u8[0],linkaddr_node_addr.u8[1]);
   uip_ipaddr(&netmask, 255,255,0,0);
@@ -146,11 +145,26 @@ PROCESS_THREAD(example_psock_server_process, ev, data)
   uip_setnetmask(&netmask);
   uip_over_mesh_set_net(&hostaddr, &netmask);
 
+#if PICO_SLIP
+
+  printf("SLIP is ON - switching off RDC\n");
+
+  // Switch off power saving (I think?)
+  NETSTACK_RDC.off(1);
+
+  slip_arch_init(0);
+  slip_set_input_callback(set_gateway);
+  process_start(&slip_process, NULL);
+
   uip_over_mesh_set_gateway_netif(&slipif);
+#endif
+
   uip_fw_default(&meshif);
   uip_over_mesh_init(8);
 
   printf("uIP started with IP address %d.%d.%d.%d\n",  uip_ipaddr_to_quad(&hostaddr));
+
+  etimer_set(&eT, CLOCK_SECOND*10);
 
   /*
    * We start with setting up a listening TCP port. Note how we're
@@ -158,7 +172,6 @@ PROCESS_THREAD(example_psock_server_process, ev, data)
    * network byte order as required by the tcp_listen() function.
    */
   tcp_listen(UIP_HTONS(12345));
-
   printf("listening\n");
 
   /*
@@ -166,44 +179,45 @@ PROCESS_THREAD(example_psock_server_process, ev, data)
    */
   while(1) {
 
-    /*
-     * We wait until we get the first TCP/IP event, which probably
-     * comes because someone connected to us.
-     */
-    PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+    PROCESS_WAIT_EVENT();
 
-    /*
-     * If a peer connected with us, we'll initialize the protosocket
-     * with PSOCK_INIT().
-     */
-    if(uip_connected()) {
-      
+    if (ev == PROCESS_EVENT_TIMER) {
+      // Redundant ATM.
+    } else if (ev == tcpip_event) {
       /*
-       * The PSOCK_INIT() function initializes the protosocket and
-       * binds the input buffer to the protosocket.
+       * If a peer connected with us, we'll initialize the protosocket
+       * with PSOCK_INIT().
        */
-      PSOCK_INIT(&ps, buffer, sizeof(buffer));
-
-      /*
-       * We loop until the connection is aborted, closed, or times out.
-       */
-      while(!(uip_aborted() || uip_closed() || uip_timedout())) {
+      if(uip_connected()) {
+        
+        /*
+         * The PSOCK_INIT() function initializes the protosocket and
+         * binds the input buffer to the protosocket.
+         */
+        PSOCK_INIT(&ps, buffer, sizeof(buffer));
 
         /*
-         * We wait until we get a TCP/IP event. Remember that we
-         * always need to wait for events inside a process, to let
-         * other processes run while we are waiting.
+         * We loop until the connection is aborted, closed, or times out.
          */
-        PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+        while(!(uip_aborted() || uip_closed() || uip_timedout())) {
 
-        /*
-         * Here is where the real work is taking place: we call the
-         * handle_connection() protothread that we defined above. This
-         * protothread uses the protosocket to receive the data that
-         * we want it to.
-         */
-        handle_connection(&ps);
+          /*
+           * We wait until we get a TCP/IP event. Remember that we
+           * always need to wait for events inside a process, to let
+           * other processes run while we are waiting.
+           */
+          PROCESS_WAIT_EVENT_UNTIL(ev == tcpip_event);
+
+          /*
+           * Here is where the real work is taking place: we call the
+           * handle_connection() protothread that we defined above. This
+           * protothread uses the protosocket to receive the data that
+           * we want it to.
+           */
+          handle_connection(&ps);
+        }
       }
+
     }
   }
   
