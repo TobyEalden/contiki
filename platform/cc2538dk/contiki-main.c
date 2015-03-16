@@ -189,7 +189,7 @@ main(void)
   PRINTF(" MAC: ");
   PRINTF("%s\n", NETSTACK_MAC.name);
   PRINTF(" RDC: ");
-  PRINTF("%s\n", NETSTACK_RDC.name);
+  PRINTF("%s - channel %d\n", NETSTACK_RDC.name, CC2538_RF_CHANNEL);
 
   /* Initialise the H/W RNG engine. */
   random_init(0);
