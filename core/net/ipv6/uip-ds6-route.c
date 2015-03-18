@@ -73,7 +73,7 @@ LIST(notificationlist);
 static int num_routes = 0;
 
 #undef DEBUG
-#define DEBUG DEBUG_NONE
+#define DEBUG DEBUG_FULL
 #include "net/ip/uip-debug.h"
 
 static void rm_routelist_callback(nbr_table_item_t *ptr);
