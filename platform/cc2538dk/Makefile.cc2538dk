@@ -31,7 +31,7 @@ MODULES += core/net core/net/mac \
            core/net/mac/contikimac \
            core/net/llsec
 
-BSL = $(CONTIKI)/tools/cc2538-bsl/cc2538-bsl.py -p /dev/ttyUSB1
+BSL = $(CONTIKI)/tools/cc2538-bsl/cc2538-bsl.py -p /dev/ttyUSB2
 
 %.upload: %.bin
 ifeq ($(wildcard $(BSL)), )

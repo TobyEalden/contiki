@@ -104,6 +104,27 @@ buf_bufdata(struct psock_buf *buf, uint16_t len,
 }
 /*---------------------------------------------------------------------------*/
 static uint8_t
+buf_bufdata_max(struct psock_buf *buf, uint16_t len, uint8_t **dataptr, uint16_t *datalen, uint16_t max)
+{
+  uint16_t copy = *datalen > max ? max : *datalen;
+  if (copy <= buf->left) {
+    memcpy(buf->ptr, *dataptr, copy);
+    buf->ptr += copy;
+    buf->left -= copy;
+    *dataptr += copy;
+    *datalen -= copy;
+    return *datalen == buf->left ? BUF_FULL : BUF_NOT_FULL;
+  } else {
+    memcpy(buf->ptr, *dataptr, buf->left);
+    buf->ptr += buf->left;
+    *datalen -= buf->left;
+    *dataptr += buf->left;
+    buf->left = 0;
+    return BUF_FULL;
+  }
+}
+/*---------------------------------------------------------------------------*/
+static uint8_t
 buf_bufto(CC_REGISTER_ARG struct psock_buf *buf, uint8_t endmarker,
 	  CC_REGISTER_ARG uint8_t **dataptr, CC_REGISTER_ARG uint16_t *datalen)
 {
@@ -315,5 +336,37 @@ psock_init(CC_REGISTER_ARG struct psock *psock,
   buf_setup(&psock->buf, buffer, buffersize);
   PT_INIT(&psock->pt);
   PT_INIT(&psock->psockpt);
+}
+/*---------------------------------------------------------------------------*/
+
+PT_THREAD(psock_readbuf_exact(CC_REGISTER_ARG struct psock *psock, uint16_t max, uint8_t reset))
+{
+  PT_BEGIN(&psock->psockpt);
+
+  if (reset != 0) {
+    buf_setup(&psock->buf, psock->bufptr, psock->bufsize);    
+  }
+
+  /* XXX: Should add buf_checkmarker() before do{} loop, if
+     incoming data has been handled while waiting for a write. */
+  
+  /* read len bytes or to end of data */
+  do {
+    if(psock->readlen == 0) {
+      PT_WAIT_UNTIL(&psock->psockpt, psock_newdata(psock));
+      psock->state = STATE_READ;
+      psock->readptr = (uint8_t *)uip_appdata;
+      psock->readlen = uip_datalen();
+    }
+  } while (buf_bufdata_max(&psock->buf, psock->bufsize, &psock->readptr, &psock->readlen, max) == BUF_NOT_FULL && psock_datalen(psock) < max);
+  
+  printf("psock_readbuf_exact readLen is %d\n",psock->readlen);
+
+  if (psock_datalen(psock) == 0) {
+    printf("psock_readbuf_exact restarting\n");
+    psock->state = STATE_NONE;
+    PT_RESTART(&psock->psockpt);
+  }
+  PT_END(&psock->psockpt);
 }
 /*---------------------------------------------------------------------------*/
