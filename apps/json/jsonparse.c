@@ -33,6 +33,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const char nullPrimitive[] = "null";
+static const char truePrimitive[] = "true";
+static const char falsePrimitive[] = "false";
+
 /*--------------------------------------------------------------------*/
 static int
 push(struct jsonparse_state *state, char c)
@@ -47,11 +51,25 @@ static char
 pop(struct jsonparse_state *state)
 {
   if(state->depth == 0) {
+    state->error = 99;
     return JSON_TYPE_ERROR;
   }
   state->depth--;
   return state->stack[state->depth];
 }
+
+static void
+atomic_special_primitive(struct jsonparse_state* state, const char* constant) {
+  char c;
+  while ((c = state->json[state->pos++]) && constant[state->vstart - state->pos] != 0) {
+    if (c != constant[state->vstart - state->pos]) {
+      state->error = JSON_ERROR_SYNTAX;
+      break;
+    }
+  }
+  state->vlen = state->pos - state->vstart - 1;
+}
+
 /*--------------------------------------------------------------------*/
 /* will pass by the value and store the start and length of the value for
    atomic types */
@@ -82,6 +100,12 @@ atomic(struct jsonparse_state *state, char type)
     /* need to back one step since first char is already gone */
     state->vstart--;
     state->vlen = state->pos - state->vstart;
+  } else if (type == JSON_TYPE_NULL) {
+    atomic_special_primitive(state, nullPrimitive);
+  } else if (type == JSON_TYPE_TRUE) {
+    atomic_special_primitive(state, truePrimitive);
+  } else if (type == JSON_TYPE_FALSE) {
+    atomic_special_primitive(state, falsePrimitive);
   }
   /* no other types for now... */
 }
@@ -174,6 +198,20 @@ jsonparse_next(struct jsonparse_state *state)
       return JSON_TYPE_ERROR;
     }
     return c;
+  case 'n':
+  case 'f':
+  case 't':
+    if(s == '[' || s == ':') {
+      atomic(state, c);
+      if (state->error) {
+        return JSON_TYPE_ERROR;
+      }
+    } else {
+      state->error = JSON_ERROR_SYNTAX;
+      return JSON_TYPE_ERROR;
+    }
+    return c;
+    break;
   default:
     if(s == ':' || s == '[') {
       if(c <= '9' && c >= '0') {
