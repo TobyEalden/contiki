@@ -333,6 +333,9 @@ tapdev_init(void)
   snprintf(buf, sizeof(buf), "ifconfig tap0 up");
   system(buf);
   printf("%s\n", buf);
+
+  system("ip -6 address add aaaa::1/64 dev tap0");
+  system("ip -6 address add aaaa::4 dev tap0");
   
   /*  */
   lasttime = 0;
